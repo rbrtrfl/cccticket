@@ -1,229 +1,26 @@
-# CCC Ticket Shop Cookie Checker
+# CCC Ticket Checker
 
-Multi-threaded tool to collect session cookies from ticket shops. Runs 3 parallel threads to maximize chances of getting good queue positions.
+Gets shop sessions into the CCC ticket queue the moment it opens, keeps them there, and alerts when one gets its turn.
 
-## Quick Start
+## Use
 
 ```bash
-# Install
-curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
-
-# Demo
-uv run demo.py
-
-# Production
-uv run ticket_checker.py https://tickets.events.ccc.de/39c3/ --open-time "2025-11-17T20:00:00+01:00"
+caffeinate -i uv run ticket_checker.py 2026-11-11T18:00:00+01:00   # or 2026-11-19T20:00:00+01:00
 ```
 
-## Ticket Checker Usage
+1. Sync the clock (`sudo sntp -sS time.apple.com`), turn off Focus mode, have payment ready.
+2. Start ~5 minutes before. It prints `closed shop: HTTP 200` and your clock offset (should be within ±1 s).
+3. Also open https://tickets.events.ccc.de/40c3/ in Chrome and reload at :00 exactly, then leave the tab alone.
+4. When the checker alerts a page change for a session (e.g. "40th Chaos Communication Congress"), it's that session's turn. If your own tab isn't in yet, open the shop in a **second Chrome profile**, paste that session's `document.cookie=…` line into the DevTools console (Cmd+Option+J), and reload.
 
-### Basic Commands
+Cookies belong to the browser profile, not the tab: pasting into your own profile replaces its queue place. Keep the checker running while you wait; it checks in every 30 s, and the queue drops sessions that don't check in once a minute.
+
+## Local test
 
 ```bash
-# Test mode (local server, opens in 10 seconds)
-uv run ticket_checker.py
-
-# Production
-uv run ticket_checker.py https://tickets.events.ccc.de/39c3/
-
-# With specific open time
-uv run ticket_checker.py https://tickets.events.ccc.de/39c3/ --open-time "2025-12-27T15:00:00+01:00"
+uv run demo.py                  # test server + checker, ~1 minute
+uv run test_ticket_checker.py   # unit tests
 ```
 
-### Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `url` | `http://127.0.0.1:5000/` | Shop URL |
-| `--open-time` | +10 seconds | Shop open time (ISO 8601) |
-| `--threads` | 3 | Number of parallel threads |
-| `--delay` | 0.05 | Seconds between requests |
-| `--start-before` | 0.5 | Start N seconds before opening |
-
-### Examples
-
-```bash
-# Standard
-uv run ticket_checker.py https://tickets.events.ccc.de/39c3/ --open-time "2025-12-27T15:00:00+01:00"
-
-# Aggressive (more threads, faster)
-uv run ticket_checker.py https://tickets.events.ccc.de/39c3/ \
-    --open-time "2025-12-27T15:00:00+01:00" \
-    --threads 5 --delay 0.03
-
-# Conservative (server-friendly)
-uv run ticket_checker.py https://tickets.events.ccc.de/39c3/ \
-    --open-time "2025-12-27T15:00:00+01:00" \
-    --threads 2 --delay 0.5
-
-```
-
-## Test Server Usage
-
-Simulates a ticket shop for testing.
-
-### Basic Commands
-
-```bash
-# Default (opens in 10 seconds)
-uv run test_server.py
-
-# Open in 5 seconds
-uv run test_server.py --open-in 5
-
-# Open at specific time
-uv run python test_server.py --open-at "2025-11-17T18:30:00"
-
-# Custom port
-uv run test_server.py --port 8080
-```
-
-### Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--open-in N` | 10 | Open in N seconds |
-| `--open-at TIME` | - | Open at specific time (ISO 8601) |
-| `--port` | 5000 | Server port |
-
-### Testing Together
-
-Match server and checker times:
-
-```bash
-# Terminal 1: Server
-uv run test_server.py --open-in 30
-
-# Terminal 2: Checker
-uv run ticket_checker.py http://127.0.0.1:5000/
-```
-
-With specific time:
-
-```bash
-# Terminal 1: Server
-uv run test_server.py --open-at "2025-12-27T15:00:00"
-
-# Terminal 2: Checker
-uv run ticket_checker.py http://127.0.0.1:5000/ \
-    --open-time "2025-12-27T15:00:00"
-```
-
-## Demo
-
-Automated demo that runs server and checker together.
-
-```bash
-uv run demo.py
-```
-
-What it does:
-1. Starts test server (opens in 10 seconds)
-2. Runs ticket checker with 3 threads
-3. Shows real-time output
-4. Displays collected cookies
-5. Cleans up automatically
-
-Duration: ~12 seconds
-
-## Unit Tests
-
-Run the test suite:
-
-```bash
-# Run all tests
-uv run test_ticket_checker.py
-
-# Expected output
-Ran 18 tests in 0.234s
-OK
-```
-
-Tests cover:
-- Cookie collection (success/failure)
-- Multi-threading
-- Retry logic
-- Error handling (network, HTTP, timeout)
-- File operations
-- Lock-free threading
-
-## Output
-
-### cookies_all.txt
-
-All collected cookies with timestamps:
-
-```
-# Cookie 1 (Thread 0)
-__QXSESSION=9b96856bf891fbaf111a6bb264784f26
-# Collected at: 2025-11-16T15:00:00.001234
-
-# Cookie 2 (Thread 1)
-__QXSESSION=a3f7d92c1b4e8f5a9d3c2e7b6a1f4c8d
-# Collected at: 2025-11-16T15:00:00.123456
-
-# Cookie 3 (Thread 2)
-__QXSESSION=5e8c1a4f7b2d9c3a6e1f8b4d7c2a5e9
-# Collected at: 2025-11-16T15:00:00.234567
-```
-
-Test each cookie in your browser to find the best queue position.
-
-## How It Works
-
-1. **Waits** until 500ms before shop opens
-2. **Starts 3 threads** that request simultaneously
-3. **Retries** every 50ms until cookies received
-4. **Saves** all cookies to `cookies_all.txt`
-
-Each thread runs independently (lock-free) and stops after collecting one cookie.
-
-## Files
-
-- `ticket_checker.py` - Main checker script
-- `test_server.py` - Test server for development
-- `demo.py` - Automated demo
-- `test_ticket_checker.py` - Unit tests (18 tests)
-- `pyproject.toml` - Dependencies
-
-## Requirements
-
-- Python 3.11+
-- requests
-- flask (for test server)
-- python-dateutil
-
-Install with: `uv sync`
-
-## Tips
-
-- **Test first**: Always run `python demo.py` before production use
-- **Exact timing**: Use precise shop open time with timezone
-- **Start early**: Script waits automatically, no need to time it manually
-- **Check output**: Review `cookies_all.txt` for all collected cookies
-- **Test cookies**: Try each cookie to find best queue position
-
-
-## Features
-
-- **Multi-threaded**: 3 parallel requests for better coverage
-- **Scheduled start**: Begins 500ms before shop opens
-- **Auto-retry**: Continues until cookies received
-- **Lock-free**: True parallel execution, no contention
-- **CLI arguments**: Flexible configuration
-- **Tested**: 18 unit tests included
-- **Resilient**: Handles network errors, timeouts, HTTP errors
-
-## Troubleshooting
-
-### No cookies collected
-- Verify URL is correct
-- Check network connection
-- Ensure shop open time hasn't passed
-
-### Connection errors
-- Check if server is running (for local tests)
-- Verify firewall settings
-- Test with `curl http://127.0.0.1:5000/`
-
+`test_server.py` simulates the shop: holding page, queue, turn, sold out (`uv run test_server.py --help`).
